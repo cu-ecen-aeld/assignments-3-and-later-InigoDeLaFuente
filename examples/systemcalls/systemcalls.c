@@ -86,7 +86,6 @@ bool do_exec(int count, ...)
     {
         printf("Execute the command in the child process\n");
         execv(command[0], command);
-
         // If execv returns, it must have failed
         perror("Execv failed");
 
