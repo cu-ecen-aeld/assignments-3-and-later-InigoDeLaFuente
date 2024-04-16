@@ -65,20 +65,8 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-    bool result = false;
 
     int pid = fork();
-    
-    // HACK!!!! Echo test seems to always pass on my enviroment, even if exec is used without specifying the full path
-    if (strcmp(command[0], "echo") == 0)
-    {
-       return false;
-    }
-
-    if(pid < 0)
-    {
-        perror("fork fail");
-    }
 
     printf("process_id(pid) = %d \n",getpid());
 
@@ -87,30 +75,32 @@ bool do_exec(int count, ...)
         printf("Execute the command in the child process\n");
         execv(command[0], command);
 
-        // If execv returns, it must have failed
-        perror("Execv failed");
+        _exit(1);
 
-        return result;
     }
-    else
+    else if (pid > 0)
     {
         int status;
         printf("Wait for the child process to terminate \n");
-        waitpid(pid, &status, 0);
+        int ret = waitpid(pid, &status, 0);
 
-        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        if (ret > 0 && WIFEXITED(status) && WEXITSTATUS(status) == 0)
         {
-            result = true;
+            return true;
         }
         else
         {
-            perror("Wait failed");
+            return false;
         }
+    }
+    else
+    {
+        return false;
     }
 
     va_end(args);
 
-    return result;
+    return  true;
 }
 
 /**
