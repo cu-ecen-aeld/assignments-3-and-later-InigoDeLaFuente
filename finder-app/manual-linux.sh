@@ -35,6 +35,12 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION}
 
     # TODO: Add your kernel build steps here
+    echo "----------------kernel build----------------------"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig 
+    make -j 4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
+    #make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
 fi
 
 echo "Adding the Image in outdir"
@@ -47,12 +53,20 @@ then
     sudo rm  -rf ${OUTDIR}/rootfs
 fi
 
+
 # TODO: Create necessary base directories
+echo "----------------Create necessary base directories----------------------"
+sudo mkdir -p ${OUTDIR}/rootfs
+cd "${OUTDIR}/rootfs"
+sudo mkdir -p bin dev etc home lib lib64 proc sbin sys tmp user var
+sudo mkdir -p usr/bin usr/lib usr/sbin
+sudo mkdir -p var/log
+sudo chmod -R 777 ${OUTDIR}/rootfs
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
 then
-git clone git://busybox.net/busybox.git
+git clone https://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
@@ -61,20 +75,57 @@ else
 fi
 
 # TODO: Make and install busybox
+echo "----------------Make and install busybox----------------------"
+sudo make distclean
+sudo make defconfig
+make CROSS_COMPILE="$CROSS_COMPILE"
+make CROSS_COMPILE="$CROSS_COMPILE" CONFIG_PREFIX="${OUTDIR}/rootfs" install
 
+echo "----------------Add library dependencies to rootfs---------------------"
 echo "Library dependencies"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
+PROGRAM_INTERPRETER=$( ${CROSS_COMPILE}readelf -a ${OUTDIR}/rootfs/bin/busybox | grep "program interpreter"| awk '{print $NF}' )
+SHARED_LIBS=$( ${CROSS_COMPILE}readelf -a ${OUTDIR}/rootfs/bin/busybox | grep "Shared library"| awk '{print $NF}' )
 
-# TODO: Add library dependencies to rootfs
+cp /usr/local/arm-cross-compiler/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib/
+cp /usr/local/arm-cross-compiler/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64/
+cp /usr/local/arm-cross-compiler/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64/
+cp /usr/local/arm-cross-compiler/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64/
 
 # TODO: Make device nodes
+cd "${OUTDIR}/rootfs"
+echo "----------------Make device nodes---------------------"
+sudo mknod -m 666 dev/null c 1 3
+sudo mknod -m 666 dev/console c 1 5
 
 # TODO: Clean and build the writer utility
+echo "----------------Clean and build the writer utility---------------------"
+cd /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app
+sudo chmod 777 /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app
+sudo make clean
+make CROSS_COMPILE=${CROSS_COMPILE}
+#${CROSS_COMPILE}gcc -o ${OUTDIR}/rootfs/home/writer writer.c
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
+sudo cp /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app/writer.c ${OUTDIR}/rootfs/home
+sudo cp /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app/writer.o ${OUTDIR}/rootfs/home
+sudo cp /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app/writer ${OUTDIR}/rootfs/home
+
+sudo cp /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app/finder.sh ${OUTDIR}/rootfs/home
+sudo mkdir -p ${OUTDIR}/rootfs/home/conf
+sudo cp /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app/conf/* ${OUTDIR}/rootfs/home/conf
+sudo cp /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app/finder-test.sh ${OUTDIR}/rootfs/home
+echo "Path reference modified."
+sed -i 's|../conf/assignment.txt|conf/assignment.txt|' ${OUTDIR}/rootfs/home/finder-test.sh
+sed -i '1s|^#!/bin/bash|#!/bin/sh|' ${OUTDIR}/rootfs/home/finder.sh
+
+sudo cp /home/inigo/Desktop/course/assigments/assignments-3-and-later-InigoDeLaFuente/finder-app/autorun-qemu.sh ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
+sudo chown -R root:root ${OUTDIR}/rootfs
 
 # TODO: Create initramfs.cpio.gz
+cd "${OUTDIR}/rootfs"
+
+sudo find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
+sudo gzip -f ${OUTDIR}/initramfs.cpio
